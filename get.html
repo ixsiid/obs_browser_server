@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title></title>
+	<link rel="shortcut icon" type="image/png" href="/public/favicon.png">
+	<script type="module">
+		const id = window.location.pathname.match(/\/get\/(.*?)$/)[1];
+
+		const modifyElement = data => {
+			if (data.command === undefined || data.command === 'append') {
+				const element = data.namespace ?
+					document.createElementNS(data.namespace, data.tag) :
+					document.createElement(data.tag);
+				if (element instanceof HTMLUnknownElement) {
+					console.error(`Failed create html element`);
+					console.error(data);
+					return;
+				}
+				if (typeof data.attributes === 'object') {
+					Object.entries(data.attributes).forEach(([k, v]) => {
+						element.setAttribute(k, v);
+					});
+				}
+				if (data.class instanceof Array) {
+					data.class.forEach(x => element.classList.add(x));
+				}
+				if (data.id) element.id = data.id;
+				if (data.content) element.textContent = data.content;
+
+				const parent = data.selector ? document.querySelector(data.selector) : document.body;
+				if (typeof (data.index) === 'number') parent.insertBefore(element, parent.children[data.index]);
+				else parent.appendChild(element);
+			} else if (data.command === 'delete' || data.command === 'remove') {
+				if (!data.selector) {
+					return;
+				}
+				document.querySelectorAll(data.selector).forEach(x => {
+					x.parentElement.removeChild(x);
+				});
+			} else if (data.command === 'update' || data.command === 'modify') {
+				if (!data.selector) {
+					return;
+				}
+				document.querySelectorAll(data.selector).forEach(element => {
+					if (typeof data.attributes === 'object') {
+						Object.entries(data.attributes).forEach(([k, v]) => {
+							if (v === undefined) element.removeAttribute(k);
+							else element.setAttribute(k, v);
+						});
+					}
+					if (data.class instanceof Array) {
+						element.removeAttribute('class');
+						data.class.forEach(x => element.classList.add(x));
+					}
+					if (data.id) element.id = data.id;
+					if (data.content) element.textContent = data.content;
+				});
+			}
+		};
+
+		const connect = () => {
+			const ws = new WebSocket(`ws://${window.location.host}`);
+			ws.addEventListener('open', () => {
+				ws.send(JSON.stringify({
+					function: 'regist',
+					query: id,
+				}));
+			}, { once: true, passive: true, capture: false });
+			ws.addEventListener('close', () => {
+				console.log(this);
+				setTimeout(connect, 3000);
+			}, { once: true, passive: true, capture: false });
+
+			ws.addEventListener('message', message => {
+				try {
+					message = JSON.parse(message.data);
+				} catch (e) {
+					console.error(`Parse error ${message}`);
+				}
+
+				if (/complete|interactive|loaded/.test(document.readyState)) {
+					modifyElement(message);
+				}
+			}, { once: false, passive: false, capture: false, });
+			return ws;
+		};
+		connect();
+
+		window.addEventListener('DOMContentLoaded', () => {
+			fetch(`/public/${id}.json`)
+				.then(res => res.json())
+				.then(elements => {
+					elements.forEach(d => modifyElement(d));
+				})
+				.catch(_ => console.log('No initial elements'));
+		}, { once: true, passive: true, capture: false });
+
+		const style = document.createElement('link');
+		style.setAttribute('rel', 'stylesheet');
+		style.setAttribute('href', `/public/${id}.css`);
+		document.head.appendChild(style);
+	</script>
+</head>
+
+<body></body>
+
+</html>
